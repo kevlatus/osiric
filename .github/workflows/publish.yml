@@ -1,0 +1,105 @@
+name: Publish Python Package
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*' # Matches v0.1.0, v0.1.0-test, v0.1.0.rc1 etc.
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-to-testpypi:
+    name: Build and publish Python 🐍 distributions to TestPyPI
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.ref_name, '-test')
+      || contains(github.ref_name, '-rc')
+      || contains(github.ref_name, '-alpha')
+      || contains(github.ref_name, '-beta')
+
+    permissions:
+      id-token: write
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/osiric
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create false
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository_url: https://test.pypi.org/legacy/
+
+  publish-to-pypi:
+    name: Build and publish Python 🐍 distributions to PyPI
+    # Trigger this job only for tags that are stable versions (e.g., v1.2.3)
+    # It should not run for tags with pre-release identifiers like -test, -rc, etc.
+    if: |
+      startsWith(github.ref_name, 'v') &&
+      !(
+        contains(github.ref_name, '-test') ||
+        contains(github.ref_name, '-alpha') ||
+        contains(github.ref_name, '-beta') ||
+        contains(github.ref_name, '.rc')
+      )
+    # Optional: run this only if TestPyPI publish was not triggered or succeeded.
+    # Or remove 'needs' if you want them to be independent based on tag.
+    # For strict "test first", you might handle this differently or manually promote.
+    # The 'if' condition is the primary gate here.
+    needs: publish-to-testpypi
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/osiric
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create false
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

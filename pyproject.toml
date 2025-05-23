@@ -1,0 +1,33 @@
+[project]
+name = "osiric"
+version = "0.1.1"
+description = "Extracting data from any kind of source."
+authors = [
+    { name = "Kevin Latusinski", email = "me@kevlatus.de" }
+]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic (>=2.11.4,<3.0.0)",
+    "aiohttp (>=3.11.18,<4.0.0)"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.poetry]
+packages = [{ include = "osiric", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+python-dotenv = "^1.1.0"
+recommonmark = "^0.7.1"
+sphinx = "^8.2.3"
+sphinx-rtd-theme = "^3.0.2"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
