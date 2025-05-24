@@ -1,6 +1,6 @@
 [project]
 name = "osiric"
-version = "0.1.0"
+version = "0.1.1"
 description = "Extracting data from any kind of source."
 authors = [
     { name = "Kevin Latusinski", email = "me@kevlatus.de" }
