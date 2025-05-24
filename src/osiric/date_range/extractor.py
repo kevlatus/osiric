@@ -1,6 +1,15 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any, Optional, AsyncGenerator, Tuple, TypeVar, Union, Sequence, Iterator
+from typing import (
+    Any,
+    Optional,
+    AsyncGenerator,
+    Tuple,
+    TypeVar,
+    Union,
+    Sequence,
+    Iterator,
+)
 
 import pydantic
 
@@ -9,9 +18,9 @@ from ..extractor import DataExtractor
 
 
 def generate_time_windows(
-        overall_start_time: datetime,
-        overall_end_time: datetime,
-        window_delta: timedelta,
+    overall_start_time: datetime,
+    overall_end_time: datetime,
+    window_delta: timedelta,
 ) -> Iterator[Tuple[datetime, datetime]]:
     """
     Generates a series of time windows (start_time, end_time) for a given overall range and delta.
@@ -43,10 +52,7 @@ def generate_time_windows(
 
         current_window_start = current_window_end
         # Safety break if delta is zero or negative, though validated above
-        if (
-                current_window_start >= overall_end_time
-                or window_delta <= timedelta(0)
-        ):
+        if current_window_start >= overall_end_time or window_delta <= timedelta(0):
             break
 
 
@@ -56,7 +62,11 @@ DateRangeState = Optional[Tuple[datetime, datetime]]
 
 
 class DateRangeExtractorWrapper(
-    DataExtractor[WrappedRecordType, Optional[datetime], WrappedConfigType]
+    DataExtractor[
+        WrappedRecordType,
+        Optional[datetime],
+        WrappedConfigType,
+    ]
 ):
     """
     A wrapper extractor that iterates over date ranges, breaking them into smaller
@@ -68,23 +78,23 @@ class DateRangeExtractorWrapper(
     """
 
     def __init__(
-            self,
-            wrapped_extractor: DataExtractor[
-                WrappedRecordType,
-                DateRangeState,
-                WrappedConfigType,
-            ],
-            overall_start_time: datetime,
-            overall_end_time: datetime,
-            window_delta: timedelta,
+        self,
+        wrapped_extractor: DataExtractor[
+            WrappedRecordType,
+            DateRangeState,
+            WrappedConfigType,
+        ],
+        start_time: datetime,
+        end_time: datetime,
+        window_delta: timedelta,
     ):
         """
         Initializes the DateRangeExtractorWrapper.
 
         Args:
             wrapped_extractor: An instance of a BaseExtractor subclass.
-            overall_start_time: The absolute start of the entire date range.
-            overall_end_time: The absolute end of the entire date range (exclusive).
+            start_time: The absolute start of the entire date range.
+            end_time: The absolute end of the entire date range (exclusive).
             window_delta: The duration of each smaller time window.
         """
 
@@ -92,9 +102,7 @@ class DateRangeExtractorWrapper(
 
         if not isinstance(wrapped_extractor, DataExtractor):
             raise TypeError("wrapped_extractor must be an instance of BaseExtractor.")
-        if not isinstance(overall_start_time, datetime) or not isinstance(
-                overall_end_time, datetime
-        ):
+        if not isinstance(start_time, datetime) or not isinstance(end_time, datetime):
             raise TypeError(
                 "overall_start_time and overall_end_time must be datetime objects."
             )
@@ -104,8 +112,8 @@ class DateRangeExtractorWrapper(
             raise ValueError("window_delta must be positive.")
 
         self.wrapped_extractor = wrapped_extractor
-        self.overall_start_time = overall_start_time
-        self.overall_end_time = overall_end_time
+        self.overall_start_time = start_time
+        self.overall_end_time = end_time
         self.window_delta = window_delta
 
         # The wrapper's own state will track the last successfully processed window's start time.
@@ -144,8 +152,8 @@ class DateRangeExtractorWrapper(
         pass
 
     async def _extract_data(
-            self,
-            initial_state: Optional[datetime] = None,
+        self,
+        initial_state: Optional[datetime] = None,
     ) -> AsyncGenerator[Union[WrappedRecordType, Sequence[WrappedRecordType]], None]:
         """
         Iterates through time windows, calling the wrapped extractor for each.
@@ -201,7 +209,7 @@ class DateRangeExtractorWrapper(
                 # which we don't directly use here, but it's part of the signature.
                 all_data = []
                 async for data, _ in self.wrapped_extractor.extract(
-                        initial_state=current_window_as_state
+                    initial_state=current_window_as_state
                 ):
                     if isinstance(data, list):
                         all_data.extend(data)
