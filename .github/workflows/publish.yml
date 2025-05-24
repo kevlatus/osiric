@@ -67,11 +67,7 @@ jobs:
         contains(github.ref_name, '-beta') ||
         contains(github.ref_name, '.rc')
       )
-    # Optional: run this only if TestPyPI publish was not triggered or succeeded.
-    # Or remove 'needs' if you want them to be independent based on tag.
-    # For strict "test first", you might handle this differently or manually promote.
-    # The 'if' condition is the primary gate here.
-    needs: publish-to-testpypi
+
     runs-on: ubuntu-latest
     environment:
       name: pypi
