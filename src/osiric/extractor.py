@@ -27,7 +27,6 @@ class DataExtractor(Generic[RecordType, StateType, ConfigType], ABC):
         StateType: The type of the state tracked by the extractor.
         ConnectionType: The type of the connection managed by the extractor.
 
-    TODO: Add unit tests for this base class and its interactions.
     TODO: Consider adding an ErrorHandler strategy for customizable error handling (retry, skip, abort).
     """
 
@@ -46,8 +45,8 @@ class DataExtractor(Generic[RecordType, StateType, ConfigType], ABC):
 
         """
         self.config = config
-        # TODO: Consider adding a unique instance ID for better logging in concurrent scenarios
-        self.logger = logging.getLogger(f"{self.__class__.__name__}")
+        self._instance_id = id(self)
+        self.logger = logging.getLogger(f"{self.__class__.__name__}.{self._instance_id}")
 
         self._current_state: Optional[StateType] = None
         self._initial_state_for_run: Optional[StateType] = None
@@ -127,7 +126,7 @@ class DataExtractor(Generic[RecordType, StateType, ConfigType], ABC):
 
         Calls `_update_state_from_record` with each record before it's yielded along with the state.
         The `_extract_data` implementation is responsible for calling `_update_state_from_batch`
-        if needed (e.g., for sync tokens, cursors file offsets).
+        if needed (e.g., for sync tokens, cursor file offsets).
 
         Args:
             initial_state: An optional initial state to begin extraction from.
