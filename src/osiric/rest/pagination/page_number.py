@@ -9,44 +9,43 @@ from ...util import get_nested_key
 from .common import PaginationStrategy
 
 
+from ..parsing import ResponseDataParser
+
 class PageNumberPaginationStrategy(PaginationStrategy[Any]):
     """
     Paginates using a page number query parameter.
     Stops when a page returns no records (if stop_if_empty_page is True).
+    Now uses a ResponseDataParser for robust record extraction.
     """
 
     def __init__(
         self,
+        data_parser: ResponseDataParser,
         method: str = "GET",
         page_param_name: str = "page",
         initial_page_number: int = 1,
         page_size_param_name: Optional[str] = None,
         page_size_value: Optional[int] = None,
         state_filter_param: Optional[str] = None,
-        response_records_key: Optional[Union[str, List[str]]] = None,
         stop_if_empty_page: bool = True,
     ):
         """
-        Initializes the PageNumberPaginationStrategy.
-
         Args:
+            data_parser (ResponseDataParser): Parser to extract records from the response.
             method (str): HTTP method for requests (e.g., "GET").
             page_param_name (str): Name of the query parameter for the page number.
             initial_page_number (int): The page number to start with (e.g., 1 for 1-indexed, 0 for 0-indexed).
             page_size_param_name (Optional[str]): Name of the query parameter for page size/limit.
             page_size_value (Optional[int]): Value for the page size/limit.
             state_filter_param (Optional[str]): Query parameter name to filter by initial_state on the first request.
-            response_records_key (Optional[Union[str, List[str]]]): Key (or path of keys) to find the list of records
-                in the response JSON. If None, the entire response is assumed to be the list of records.
-                Used to determine if a page is empty.
-            stop_if_empty_page (bool): If True, pagination stops if a page returns zero records
-                or if records cannot be determined as a list.
+            stop_if_empty_page (bool): If True, pagination stops if a page returns zero records.
         """
         if initial_page_number < 0:
             raise ValueError("initial_page_number must be non-negative.")
         if page_size_value is not None and page_size_value <= 0:
             raise ValueError("page_size_value must be positive if provided.")
 
+        self.data_parser = data_parser
         self._method = method.upper()
         self.page_param_name = page_param_name
         self.current_page_number = initial_page_number
@@ -56,7 +55,6 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
         self.page_size_value = page_size_value
 
         self._state_filter_param = state_filter_param
-        self._response_records_key = response_records_key
         self.stop_if_empty_page = stop_if_empty_page
 
         # Store base request details needed for subsequent pages
@@ -70,7 +68,7 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
             f"Initialized PageNumberPaginationStrategy: Method='{self._method}', "
             f"Page Param='{self.page_param_name}', Initial Page={self._initial_page_number}, "
             f"Page Size Param='{self.page_size_param_name}', Page Size Value={self.page_size_value}, "
-            f"State Filter='{self._state_filter_param}', Records Key='{self._response_records_key}', "
+            f"State Filter='{self._state_filter_param}', "
             f"Stop if Empty Page={self.stop_if_empty_page}"
         )
 
@@ -125,50 +123,36 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
         last_response: ClientResponse,
         last_request_url: str,
     ) -> Optional[Dict[str, Any]]:
+        # Use the data parser to extract records robustly
         try:
-            last_response_data = await last_response.json()
+            records_data = await self.data_parser.parse_records(last_response)
         except Exception as e:
             logging.warning(
-                f"PageNumberPaginationStrategy: Failed to parse response JSON: {e}. Assuming end of pagination."
+                f"PageNumberPaginationStrategy: Failed to parse records from response: {e}. Assuming end of pagination."
             )
             return None
 
-        if self.stop_if_empty_page:
-            # Determine how many records were actually received
-            records_data = get_nested_key(
-                last_response_data, self._response_records_key
-            )
-
+        num_received = 0
+        if isinstance(records_data, list):
+            num_received = len(records_data)
+        elif records_data is None:
             num_received = 0
-            if isinstance(records_data, list):
-                num_received = len(records_data)
-            elif records_data is None and self._response_records_key is None:
-                if isinstance(last_response_data, list):
-                    num_received = len(last_response_data)
-                else:
-                    logging.warning(
-                        "PageNumberPaginationStrategy: Could not determine number of received records "
-                        "(response root is not a list and no records key specified, or root is None). "
-                        "Assuming end of pagination."
-                    )
-                    return None
-            else:
-                logging.warning(
-                    f"PageNumberPaginationStrategy: Could not determine number of received records. "
-                    f"Expected a list at key '{self._response_records_key}' (or response root if no key). "
-                    f"Found: {type(records_data)}. Assuming end of pagination."
-                )
-                return None
-
-            logging.debug(
-                f"PageNumberPaginationStrategy: Received {num_received} records."
+        else:
+            logging.warning(
+                f"PageNumberPaginationStrategy: Could not determine number of received records. "
+                f"Expected a list, found: {type(records_data)}. Assuming end of pagination."
             )
+            return None
 
-            if num_received == 0:
-                logging.info(
-                    "PageNumberPaginationStrategy: Received 0 records. Assuming end of pagination."
-                )
-                return None
+        logging.debug(
+            f"PageNumberPaginationStrategy: Received {num_received} records."
+        )
+
+        if self.stop_if_empty_page and num_received == 0:
+            logging.info(
+                "PageNumberPaginationStrategy: Received 0 records. Assuming end of pagination."
+            )
+            return None
 
         # Increment page number for the next request
         self.current_page_number += 1

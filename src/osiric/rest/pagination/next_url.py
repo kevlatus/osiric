@@ -6,26 +6,32 @@ from urllib.parse import urljoin
 from aiohttp import ClientResponse
 
 from ...common import StateType
+
 from ...util import get_nested_key
 from .common import PaginationStrategy
+from ..parsing import ResponseDataParser
 
 
 class BaseNextUrlPaginationStrategy(PaginationStrategy[StateType], Generic[StateType]):
-    """Base class for pagination strategies that follow 'next URL' links."""
+    """Base class for pagination strategies that follow 'next URL' links, now with ResponseDataParser support."""
 
     def __init__(
         self,
         next_url_key: Union[str, List[str]],
+        data_parser: ResponseDataParser,
         method: str = "GET",
         state_filter_param: Optional[str] = None,
+        stop_if_empty_page: bool = True,
     ):
         if not next_url_key:
             raise ValueError("NextUrlPaginationStrategy requires 'next_url_key'.")
         self.next_url_key = next_url_key
+        self.data_parser = data_parser
         self._method = method.upper()
         self._state_filter_param = state_filter_param
+        self.stop_if_empty_page = stop_if_empty_page
         logging.info(
-            f"Initialized {self.__class__.__name__} with key: {next_url_key}. State filter param: {state_filter_param}"
+            f"Initialized {self.__class__.__name__} with key: {next_url_key}. State filter param: {state_filter_param}, stop_if_empty_page: {stop_if_empty_page}"
         )
 
     def get_initial_request_args(
@@ -95,7 +101,7 @@ class BaseNextUrlPaginationStrategy(PaginationStrategy[StateType], Generic[State
 class BodyNextUrlPaginationStrategy(
     BaseNextUrlPaginationStrategy[StateType], Generic[StateType]
 ):
-    """Paginates by following a 'next URL' link found in the response body."""
+    """Paginates by following a 'next URL' link found in the response body. Uses ResponseDataParser for record extraction."""
 
     async def get_next_request_args(
         self,
@@ -104,13 +110,43 @@ class BodyNextUrlPaginationStrategy(
     ) -> Optional[Dict[str, Any]]:
         last_response_data = await last_response.json()
         next_page_value = get_nested_key(last_response_data, self.next_url_key)
+
+        # Use the data parser to extract records and optionally stop if empty
+        if self.stop_if_empty_page:
+            try:
+                records_data = await self.data_parser.parse_records(last_response)
+            except Exception as e:
+                logging.warning(
+                    f"BodyNextUrlPaginationStrategy: Failed to parse records from response: {e}. Assuming end of pagination."
+                )
+                return None
+            num_received = 0
+            if isinstance(records_data, list):
+                num_received = len(records_data)
+            elif records_data is None:
+                num_received = 0
+            else:
+                logging.warning(
+                    f"BodyNextUrlPaginationStrategy: Could not determine number of received records. "
+                    f"Expected a list, found: {type(records_data)}. Assuming end of pagination."
+                )
+                return None
+            logging.debug(
+                f"BodyNextUrlPaginationStrategy: Received {num_received} records."
+            )
+            if num_received == 0:
+                logging.info(
+                    "BodyNextUrlPaginationStrategy: Received 0 records. Assuming end of pagination."
+                )
+                return None
+
         return await self._process_next_url(next_page_value, last_request_url)
 
 
 class HeaderNextUrlPaginationStrategy(
     BaseNextUrlPaginationStrategy[StateType], Generic[StateType]
 ):
-    """Paginates by following a 'next URL' link found in the response headers."""
+    """Paginates by following a 'next URL' link found in the response headers. Uses ResponseDataParser for record extraction."""
 
     async def get_next_request_args(
         self,
@@ -125,5 +161,34 @@ class HeaderNextUrlPaginationStrategy(
             # Handle list path through headers (unlikely but for API consistency)
             headers_dict = dict(last_response.headers)
             next_page_value = get_nested_key(headers_dict, self.next_url_key)
+
+        # Use the data parser to extract records and optionally stop if empty
+        if self.stop_if_empty_page:
+            try:
+                records_data = await self.data_parser.parse_records(last_response)
+            except Exception as e:
+                logging.warning(
+                    f"HeaderNextUrlPaginationStrategy: Failed to parse records from response: {e}. Assuming end of pagination."
+                )
+                return None
+            num_received = 0
+            if isinstance(records_data, list):
+                num_received = len(records_data)
+            elif records_data is None:
+                num_received = 0
+            else:
+                logging.warning(
+                    f"HeaderNextUrlPaginationStrategy: Could not determine number of received records. "
+                    f"Expected a list, found: {type(records_data)}. Assuming end of pagination."
+                )
+                return None
+            logging.debug(
+                f"HeaderNextUrlPaginationStrategy: Received {num_received} records."
+            )
+            if num_received == 0:
+                logging.info(
+                    "HeaderNextUrlPaginationStrategy: Received 0 records. Assuming end of pagination."
+                )
+                return None
 
         return await self._process_next_url(next_page_value, last_request_url)
