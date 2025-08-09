@@ -3,6 +3,8 @@ import logging
 from typing import Any, List, Union, Optional, Dict
 from urllib.parse import urljoin
 
+from aiohttp import ClientResponse
+
 from ...util import get_nested_key
 from .common import PaginationStrategy
 
@@ -120,9 +122,16 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
 
     async def get_next_request_args(
         self,
-        last_response_data: Any,  # Can be Dict or List from response.json()
-        last_request_url: str,  # Not used by this strategy
+        last_response: ClientResponse,
+        last_request_url: str,
     ) -> Optional[Dict[str, Any]]:
+        try:
+            last_response_data = await last_response.json()
+        except Exception as e:
+            logging.warning(
+                f"PageNumberPaginationStrategy: Failed to parse response JSON: {e}. Assuming end of pagination."
+            )
+            return None
 
         if self.stop_if_empty_page:
             # Determine how many records were actually received
@@ -134,17 +143,9 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
             if isinstance(records_data, list):
                 num_received = len(records_data)
             elif records_data is None and self._response_records_key is None:
-                # If no key specified, assume the root of the response is the list/data
-                # _get_nested_key_utility(data, None) should return data.
-                # So, if last_response_data was a list, records_data would be that list.
-                # This branch handles if last_response_data itself was None.
-                if isinstance(
-                    last_response_data, list
-                ):  # Should be caught by isinstance(records_data, list)
-                    num_received = len(
-                        last_response_data
-                    )  # Defensive, may be redundant
-                else:  # last_response_data was None or not a list
+                if isinstance(last_response_data, list):
+                    num_received = len(last_response_data)
+                else:
                     logging.warning(
                         "PageNumberPaginationStrategy: Could not determine number of received records "
                         "(response root is not a list and no records key specified, or root is None). "
@@ -152,8 +153,6 @@ class PageNumberPaginationStrategy(PaginationStrategy[Any]):
                     )
                     return None
             else:
-                # Key was specified but not found, or value at key is not a list.
-                # Or, no key specified and response root (records_data) is not a list.
                 logging.warning(
                     f"PageNumberPaginationStrategy: Could not determine number of received records. "
                     f"Expected a list at key '{self._response_records_key}' (or response root if no key). "
